@@ -1,0 +1,181 @@
+# ============================================================================
+# 聊天服务器一键启动 —— docker compose up
+#
+# 包含：MySQL + Redis + 6 个业务服务
+#
+# 启动顺序（通过 depends_on + healthcheck 控制）：
+#   MySQL/Redis → StatusServer → ChatServer → GateServer
+#
+# 用法：
+#   docker compose up -d          # 后台启动
+#   docker compose logs -f gate   # 看某个服务日志
+#   docker compose down           # 停止并删除
+#   docker compose down -v        # 连数据卷一起删（重置数据库）
+# ============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # 基础设施
+  # ---------------------------------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    container_name: chat-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: llfc
+      MYSQL_USER: study
+      MYSQL_PASSWORD: study123
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 初始化 SQL 放这里，容器首次启动自动执行
+      - ../sql:/docker-entrypoint-initdb.d:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot123456"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+    networks:
+      - chat-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: chat-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass 123456 --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - chat-net
+
+  # ---------------------------------------------------------------------------
+  # 业务服务（同一镜像，用 SERVICE_NAME 区分）
+  # ---------------------------------------------------------------------------
+  status:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: chat-server:latest
+    container_name: chat-status
+    restart: unless-stopped
+    environment:
+      SERVICE_NAME: StatusServer
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    ports:
+      - "50052:50052"
+    volumes:
+      - ./config/StatusServer.ini:/app/config/config.ini:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chat-net
+
+  chatserver1:
+    image: chat-server:latest
+    container_name: chat-server1
+    restart: unless-stopped
+    environment:
+      SERVICE_NAME: ChatServer
+      MYSQL_HOST: mysql
+      REDIS_HOST: redis
+    ports:
+      - "8090:8090"
+      - "50055:50055"
+    volumes:
+      - ./config/ChatServer.ini:/app/config/config.ini:ro
+    depends_on:
+      status:
+        condition: service_started
+    networks:
+      - chat-net
+
+  chatserver2:
+    image: chat-server:latest
+    container_name: chat-server2
+    restart: unless-stopped
+    environment:
+      SERVICE_NAME: ChatServer2
+      MYSQL_HOST: mysql
+      REDIS_HOST: redis
+    ports:
+      - "8091:8091"
+      - "50056:50056"
+    volumes:
+      - ./config/ChatServer2.ini:/app/config/config.ini:ro
+    depends_on:
+      status:
+        condition: service_started
+    networks:
+      - chat-net
+
+  gate:
+    image: chat-server:latest
+    container_name: chat-gate
+    restart: unless-stopped
+    environment:
+      SERVICE_NAME: GateServer
+      MYSQL_HOST: mysql
+      REDIS_HOST: redis
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config/GateServer.ini:/app/config/config.ini:ro
+    depends_on:
+      status:
+        condition: service_started
+    networks:
+      - chat-net
+
+  resource:
+    image: chat-server:latest
+    container_name: chat-resource
+    restart: unless-stopped
+    environment:
+      SERVICE_NAME: ResourceServer
+      MYSQL_HOST: mysql
+      REDIS_HOST: redis
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/ResourceServer.ini:/app/config/config.ini:ro
+      - resource-output:/app/output
+      - resource-static:/app/static
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chat-net
+
+# ============================================================================
+networks:
+  chat-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
+  resource-output:
+  resource-static:
