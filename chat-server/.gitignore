@@ -1,0 +1,37 @@
+﻿# 编译产物
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.exe
+*.out
+
+# 目录
+build/
+bin/
+out/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# protobuf / gRPC 生成文件（需由 .proto 生成）
+*.pb.h
+*.pb.cc
+*.grpc.pb.h
+*.grpc.pb.cc
+
+# IDE
+.vscode/
+.idea/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.user
+
+# 系统
+.DS_Store
+Thumbs.db
+*~

@@ -1,0 +1,54 @@
+# 编译产物
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.exe
+*.out
+
+# 目录
+bin/
+build/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.cmake
+!.cmake/
+
+# protobuf / gRPC 生成文件
+*.pb.h
+*.pb.cc
+*.grpc.pb.h
+*.grpc.pb.cc
+
+# 运行时数据
+store/
+data/
+*.log
+*.tmp
+*.dump
+dumpFile
+
+# IDE
+.vscode/
+.idea/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.suo
+*.user
+
+# 系统
+.DS_Store
+Thumbs.db
+*~
+
+# 测试临时
+/tmp/
+*.diff
