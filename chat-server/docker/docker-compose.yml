@@ -1,16 +1,17 @@
 # ============================================================================
 # 聊天服务器一键启动 —— docker compose up
 #
-# 包含：MySQL + Redis + 6 个业务服务
+# 包含：MySQL + Redis + 4 个业务服务
+# （CMake 实际构建出 gate_server / chat_server / status_server / resource_server）
 #
-# 启动顺序（通过 depends_on + healthcheck 控制）：
-#   MySQL/Redis → StatusServer → ChatServer → GateServer
+# 启动顺序（depends_on + healthcheck 控制）：
+#   MySQL/Redis → status_server → chat_server → gate_server
 #
 # 用法：
-#   docker compose up -d          # 后台启动
-#   docker compose logs -f gate   # 看某个服务日志
-#   docker compose down           # 停止并删除
-#   docker compose down -v        # 连数据卷一起删（重置数据库）
+#   docker compose up -d            # 后台启动
+#   docker compose logs -f gate     # 看某个服务日志
+#   docker compose down             # 停止（保留数据）
+#   docker compose down -v          # 停止并删除数据卷（重置数据库）
 # ============================================================================
 
 services:
@@ -31,8 +32,6 @@ services:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      # 初始化 SQL 放这里，容器首次启动自动执行
-      - ../sql:/docker-entrypoint-initdb.d:ro
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
@@ -74,7 +73,7 @@ services:
     container_name: chat-status
     restart: unless-stopped
     environment:
-      SERVICE_NAME: StatusServer
+      SERVICE_NAME: status_server
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
       REDIS_HOST: redis
@@ -91,12 +90,12 @@ services:
     networks:
       - chat-net
 
-  chatserver1:
+  chat:
     image: chat-server:latest
-    container_name: chat-server1
+    container_name: chat-server
     restart: unless-stopped
     environment:
-      SERVICE_NAME: ChatServer
+      SERVICE_NAME: chat_server
       MYSQL_HOST: mysql
       REDIS_HOST: redis
     ports:
@@ -107,25 +106,10 @@ services:
     depends_on:
       status:
         condition: service_started
-    networks:
-      - chat-net
-
-  chatserver2:
-    image: chat-server:latest
-    container_name: chat-server2
-    restart: unless-stopped
-    environment:
-      SERVICE_NAME: ChatServer2
-      MYSQL_HOST: mysql
-      REDIS_HOST: redis
-    ports:
-      - "8091:8091"
-      - "50056:50056"
-    volumes:
-      - ./config/ChatServer2.ini:/app/config/config.ini:ro
-    depends_on:
-      status:
-        condition: service_started
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - chat-net
 
@@ -134,7 +118,7 @@ services:
     container_name: chat-gate
     restart: unless-stopped
     environment:
-      SERVICE_NAME: GateServer
+      SERVICE_NAME: gate_server
       MYSQL_HOST: mysql
       REDIS_HOST: redis
     ports:
@@ -144,6 +128,10 @@ services:
     depends_on:
       status:
         condition: service_started
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - chat-net
 
@@ -152,7 +140,7 @@ services:
     container_name: chat-resource
     restart: unless-stopped
     environment:
-      SERVICE_NAME: ResourceServer
+      SERVICE_NAME: resource_server
       MYSQL_HOST: mysql
       REDIS_HOST: redis
     ports:
