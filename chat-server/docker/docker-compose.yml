@@ -65,6 +65,27 @@ services:
   # ---------------------------------------------------------------------------
   # 业务服务（同一镜像，用 SERVICE_NAME 区分）
   # ---------------------------------------------------------------------------
+  verify:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: chat-server:latest
+    container_name: chat-verify
+    restart: unless-stopped
+    environment:
+      SERVICE_NAME: varify_server
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./config/VarifyServer.ini:/app/config/config.ini:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - chat-net
+
   status:
     build:
       context: ..

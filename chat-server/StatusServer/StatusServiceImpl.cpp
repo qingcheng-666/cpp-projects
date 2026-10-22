@@ -56,37 +56,33 @@ StatusServiceImpl::StatusServiceImpl()
 
 ChatServer StatusServiceImpl::getChatServer() {
 	std::lock_guard<std::mutex> guard(_server_mtx);
+	// 一个节点都没配的话直接返回空结果，避免解引用 _servers.end()
+	if (_servers.empty()) {
+		return ChatServer();
+	}
 	auto minServer = _servers.begin()->second;
-	
-	//auto count_str = RedisMgr::GetInstance()->HGet(LOGIN_COUNT, minServer.name);
-	//if (count_str.empty()) {
-	//	//不存在则默认设置为最大
-	//	minServer.con_count = INT_MAX;
-	//}
-	//else {
-	//	minServer.con_count = std::stoi(count_str);
-	//}
+	minServer.con_count = INT_MAX;
 
+	// 从 Redis 的 logincount 哈希里读各 ChatServer 上报的当前连接数，选最轻载的节点。
+	// 拿不到计数说明节点刚起或者已下线，按「最忙」处理，避免把用户导到死节点。
+	for (auto& server : _servers) {
+		auto count_str = RedisMgr::GetInstance()->HGet(LOGIN_COUNT, server.second.name);
+		if (count_str.empty()) {
+			server.second.con_count = INT_MAX;
+		}
+		else {
+			try {
+				server.second.con_count = std::stoi(count_str);
+			}
+			catch (...) {
+				server.second.con_count = INT_MAX;
+			}
+		}
 
-	//// 使用范围基于for循环
-	//for ( auto& server : _servers) {
-	//	
-	//	if (server.second.name == minServer.name) {
-	//		continue;
-	//	}
-
-	//	auto count_str = RedisMgr::GetInstance()->HGet(LOGIN_COUNT, server.second.name);
-	//	if (count_str.empty()) {
-	//		server.second.con_count = INT_MAX;
-	//	}
-	//	else {
-	//		server.second.con_count = std::stoi(count_str);
-	//	}
-
-	//	if (server.second.con_count < minServer.con_count) {
-	//		minServer = server.second;
-	//	}
-	//}
+		if (server.second.con_count < minServer.con_count) {
+			minServer = server.second;
+		}
+	}
 
 	return minServer;
 }
@@ -99,8 +95,9 @@ Status StatusServiceImpl::Login(ServerContext* context, const LoginReq* request,
 	std::string uid_str = std::to_string(uid);
 	std::string token_key = USERTOKENPREFIX + uid_str;
 	std::string token_value = "";
+	// Get 返回 true 表示 key 存在、取到了 token；取不到才说明 uid 无效
 	bool success = RedisMgr::GetInstance()->Get(token_key, token_value);
-	if (success) {
+	if (!success) {
 		reply->set_error(ErrorCodes::UidInvalid);
 		return Status::OK;
 	}
@@ -119,6 +116,7 @@ void StatusServiceImpl::insertToken(int uid, std::string token)
 {
 	std::string uid_str = std::to_string(uid);
 	std::string token_key = USERTOKENPREFIX + uid_str;
-	RedisMgr::GetInstance()->Set(token_key, token);
+	// token 给 7 天过期，避免签发出去的凭证永久有效；登录时重新签发即自动续期
+	RedisMgr::GetInstance()->SetWithExpire(token_key, token, TOKEN_EXPIRE_SECONDS);
 }
 

@@ -104,6 +104,26 @@ target_include_directories(chat_server PRIVATE
 target_link_libraries(chat_server ${COMMON_LINK_LIBS})
 
 # ============================================================
+# VarifyServer — gRPC 验证码服务（50051）
+#   给 GateServer 的 /get_varifycode 用：生成 6 位码 -> SETEX code_<email> 300
+# ============================================================
+add_executable(varify_server
+    server/VarifyServer/ConfigMgr.cpp
+    server/VarifyServer/RedisMgr.cpp
+    server/VarifyServer/VarifyServer.cpp
+    server/VarifyServer/VarifyServiceImpl.cpp
+    server/VarifyServer/message.grpc.pb.cc
+    server/VarifyServer/message.pb.cc
+)
+target_include_directories(varify_server PRIVATE
+    server/VarifyServer
+    ${THIRD_PARTY_INCLUDE_DIRS}
+    ${GRPC_INCLUDE_DIRS}
+    ${PROTOBUF_INCLUDE_DIRS}
+)
+target_link_libraries(varify_server ${COMMON_LINK_LIBS})
+
+# ============================================================
 # StatusServer — gRPC 状态服务（分配 ChatServer + 发 token，50052）
 # ============================================================
 add_executable(status_server

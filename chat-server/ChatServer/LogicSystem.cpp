@@ -511,7 +511,9 @@ void LogicSystem::DealChatTextMsg(std::shared_ptr<CSession> session, const short
 		chat_msg->unique_id = unique_id;
 		chat_msg->thread_id = thread_id;
 		chat_msg->content = content;
-		chat_msg->status = 2;
+		// 新消息落库时是「未读」，等对方真正读到再更新；
+		// 写死成 2(READED) 等于所有消息一入库就是已读，未读/红点/补推都没法做
+		chat_msg->status = MsgStatus::UN_READ;
 		chat_msg->msg_type = int(ChatMsgType::TEXT);
 		chat_datas.push_back(chat_msg);
 	}
@@ -537,7 +539,15 @@ void LogicSystem::DealChatTextMsg(std::shared_ptr<CSession> session, const short
 		});
 
 
-	//查询redis 查找touid对应的server ip
+	// 快速路径：先看对方是不是就挂在本进程上，命中就直接投递，省一次 Redis 往返
+	auto local_session = UserMgr::GetInstance()->GetSession(touid);
+	if (local_session) {
+		std::string return_str = rtvalue.toStyledString();
+		local_session->Send(return_str, ID_NOTIFY_TEXT_CHAT_MSG_REQ);
+		return;
+	}
+
+	// 本机没有，再查 Redis 路由表看对方在哪台 ChatServer
 	auto to_str = std::to_string(touid);
 	auto to_ip_key = USERIPPREFIX + to_str;
 	std::string to_ip_value = "";
@@ -548,16 +558,9 @@ void LogicSystem::DealChatTextMsg(std::shared_ptr<CSession> session, const short
 
 	auto& cfg = ConfigMgr::Inst();
 	auto self_name = cfg["SelfServer"]["Name"];
-	//直接通知对方有认证通过消息
+	// 路由表指向本机但内存里没有 session：说明对方刚好断开，直接结束
 	if (to_ip_value == self_name) {
-		auto session = UserMgr::GetInstance()->GetSession(touid);
-		if (session) {
-			//在内存中则直接发送通知对方
-			std::string return_str = rtvalue.toStyledString();
-			session->Send(return_str, ID_NOTIFY_TEXT_CHAT_MSG_REQ);
-		}
-
-		return ;
+		return;
 	}
 
 

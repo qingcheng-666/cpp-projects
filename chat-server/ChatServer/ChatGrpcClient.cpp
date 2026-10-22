@@ -1,4 +1,5 @@
 #include "ChatGrpcClient.h"
+#include <chrono>
 #include "RedisMgr.h"
 #include "ConfigMgr.h"
 #include "UserMgr.h"
@@ -45,6 +46,10 @@ AddFriendRsp ChatGrpcClient::NotifyAddFriend(std::string server_ip, const AddFri
 	
 	auto &pool = find_iter->second;
 	ClientContext context;
+	// 必须设置 deadline：同步 RPC 会把唯一的业务逻辑线程阻塞住，
+	// 对端卡死而没有超时的话，整个 ChatServer 都不再处理任何消息
+	context.set_deadline(std::chrono::system_clock::now() +
+		std::chrono::milliseconds(RPC_TIMEOUT_MS));
 	auto stub = pool->getConnection();
 	Status status = stub->NotifyAddFriend(&context, req, &rsp);
 	Defer defercon([&stub, this, &pool]() {
@@ -122,6 +127,10 @@ AuthFriendRsp ChatGrpcClient::NotifyAuthFriend(std::string server_ip, const Auth
 
 	auto& pool = find_iter->second;
 	ClientContext context;
+	// 必须设置 deadline：同步 RPC 会把唯一的业务逻辑线程阻塞住，
+	// 对端卡死而没有超时的话，整个 ChatServer 都不再处理任何消息
+	context.set_deadline(std::chrono::system_clock::now() +
+		std::chrono::milliseconds(RPC_TIMEOUT_MS));
 	auto stub = pool->getConnection();
 	Status status = stub->NotifyAuthFriend(&context, req, &rsp);
 	Defer defercon([&stub, this, &pool]() {
@@ -160,6 +169,10 @@ TextChatMsgRsp ChatGrpcClient::NotifyTextChatMsg(std::string server_ip,
 
 	auto& pool = find_iter->second;
 	ClientContext context;
+	// 必须设置 deadline：同步 RPC 会把唯一的业务逻辑线程阻塞住，
+	// 对端卡死而没有超时的话，整个 ChatServer 都不再处理任何消息
+	context.set_deadline(std::chrono::system_clock::now() +
+		std::chrono::milliseconds(RPC_TIMEOUT_MS));
 	auto stub = pool->getConnection();
 	Status status = stub->NotifyTextChatMsg(&context, req, &rsp);
 	Defer defercon([&stub, this, &pool]() {
@@ -189,6 +202,10 @@ KickUserRsp ChatGrpcClient::NotifyKickUser(std::string server_ip, const KickUser
 
 	auto& pool = find_iter->second;
 	ClientContext context;
+	// 必须设置 deadline：同步 RPC 会把唯一的业务逻辑线程阻塞住，
+	// 对端卡死而没有超时的话，整个 ChatServer 都不再处理任何消息
+	context.set_deadline(std::chrono::system_clock::now() +
+		std::chrono::milliseconds(RPC_TIMEOUT_MS));
 	auto stub = pool->getConnection();
 	Defer defercon([&stub, this, &pool]() {
 		pool->returnConnection(std::move(stub));

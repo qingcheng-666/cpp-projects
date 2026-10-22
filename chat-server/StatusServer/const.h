@@ -72,4 +72,5 @@ private:
 //分布式锁的重试时间
 #define ACQUIRE_TIME_OUT 5
 
-
+// token 有效期（秒）：7 天
+#define TOKEN_EXPIRE_SECONDS (7 * 24 * 3600)

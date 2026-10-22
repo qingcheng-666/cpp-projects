@@ -6,7 +6,7 @@
 # 不用为每个服务单独构建镜像（节省构建时间和镜像体积）。
 #
 # SERVICE_NAME 取值（对应 CMake 产物名）：
-#   gate_server / chat_server / status_server / resource_server
+#   gate_server / chat_server / status_server / resource_server / varify_server
 #
 # 用法：
 #   docker run -e SERVICE_NAME=gate_server ...

@@ -45,8 +45,13 @@ void CSession::Start(){
 
 void CSession::Send(std::string msg, short msgid) {
 	std::lock_guard<std::mutex> lock(_send_lock);
+	// 连接已经关闭就别再入队了：此时队列非空会直接 return，
+	// 那条消息永远不会被发出，只会把队列堆到上限
+	if (_b_close) {
+		return;
+	}
 	int send_que_size = _send_que.size();
-	if (send_que_size > MAX_SENDQUE) {
+	if (send_que_size >= MAX_SENDQUE) {
 		std::cout << "session: " << _session_id << " send que fulled, size is " << MAX_SENDQUE << endl;
 		return;
 	}
@@ -62,8 +67,13 @@ void CSession::Send(std::string msg, short msgid) {
 
 void CSession::Send(char* msg, short max_length, short msgid) {
 	std::lock_guard<std::mutex> lock(_send_lock);
+	// 连接已经关闭就别再入队了：此时队列非空会直接 return，
+	// 那条消息永远不会被发出，只会把队列堆到上限
+	if (_b_close) {
+		return;
+	}
 	int send_que_size = _send_que.size();
-	if (send_que_size > MAX_SENDQUE) {
+	if (send_que_size >= MAX_SENDQUE) {
 		std::cout << "session: " << _session_id << " send que fulled, size is " << MAX_SENDQUE << endl;
 		return;
 	}
@@ -165,8 +175,9 @@ void CSession::AsyncReadHead(int total_len)
 			//网络字节序转化为本地字节序
 			msg_id = boost::asio::detail::socket_ops::network_to_host_short(msg_id);
 			std::cout << "msg_id is " << msg_id << endl;
-			//id非法
-			if (msg_id > MAX_LENGTH) {
+			//id非法：msg_id 从网络字节序转成 short，>=32768 的值会变成负数，
+			//只判上界会被负数绕过，必须同时挡住
+			if (msg_id < 0 || msg_id > MAX_LENGTH) {
 				std::cout << "invalid msg_id is " << msg_id << endl;
 				_server->ClearSession(_session_id);
 				return;
@@ -177,8 +188,8 @@ void CSession::AsyncReadHead(int total_len)
 			msg_len = boost::asio::detail::socket_ops::network_to_host_short(msg_len);
 			std::cout << "msg_len is " << msg_len << endl;
 
-			//id非法
-			if (msg_len > MAX_LENGTH) {
+			//长度非法：同上，msg_len 也可能是负数（0xFFFF 之类）
+			if (msg_len < 0 || msg_len > MAX_LENGTH) {
 				std::cout << "invalid data length is " << msg_len << endl;
 				_server->ClearSession(_session_id);
 				return;

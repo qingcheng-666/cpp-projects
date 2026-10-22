@@ -44,6 +44,8 @@ private:
 #define HEAD_DATA_LEN 2
 #define MAX_RECVQUE  10000
 #define MAX_SENDQUE 1000
+// 跨服 gRPC 调用的超时时间（毫秒）：不加 deadline 会把逻辑线程永久阻塞
+#define RPC_TIMEOUT_MS 500
 
 
 enum MSG_IDS {

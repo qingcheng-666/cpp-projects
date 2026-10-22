@@ -45,6 +45,36 @@ bool RedisMgr::Get(const std::string& key, std::string& value)
 	 return true;
 }
 
+bool RedisMgr::SetWithExpire(const std::string& key, const std::string& value,
+	int expire_seconds) {
+	auto connect = _con_pool->getConnection();
+	if (connect == nullptr) {
+		return false;
+	}
+
+	// SETEX：一步完成「写值 + 设置过期」，避免 key 永久驻留
+	auto reply = (redisReply*)redisCommand(connect, "SETEX %s %d %s",
+		key.c_str(), expire_seconds, value.c_str());
+	if (NULL == reply)
+	{
+		std::cout << "Execut command [ SETEX " << key << " ] failure ! " << std::endl;
+		_con_pool->returnConnection(connect);
+		return false;
+	}
+
+	if (!(reply->type == REDIS_REPLY_STATUS && strcmp(reply->str, "OK") == 0))
+	{
+		std::cout << "Execut command [ SETEX " << key << " ] failure ! " << std::endl;
+		freeReplyObject(reply);
+		_con_pool->returnConnection(connect);
+		return false;
+	}
+
+	freeReplyObject(reply);
+	_con_pool->returnConnection(connect);
+	return true;
+}
+
 bool RedisMgr::Set(const std::string &key, const std::string &value){
 	//执行redis命令行
 	auto connect = _con_pool->getConnection();
