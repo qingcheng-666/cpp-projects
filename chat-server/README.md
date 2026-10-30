@@ -100,8 +100,28 @@ cmake ..
 make -j$(nproc)
 ```
 
-> ⚠️ `message.pb.h` / `message.grpc.pb.h` 等 protobuf 生成文件未纳入版本控制，
-> 需先由 `message.proto` 生成，或从原教程仓库获取。
+> ⚠️ `message.pb.h` / `message.grpc.pb.h` 等 protobuf 生成文件未纳入版本控制（见 `.gitignore`），
+> 克隆仓库后**必须先执行一次下面的生成脚本**，否则 `cmake` 找不到 `message.pb.h`。
+
+### 生成 protobuf / gRPC 代码（首次构建必须先做）
+
+```bash
+chmod +x tools/regen_proto.sh
+./tools/regen_proto.sh                 # 为全部 6 个服务生成
+# ./tools/regen_proto.sh ChatServer    # 只生成某一个服务
+```
+
+脚本对每个服务实际执行：
+
+```bash
+protoc -I <svc> --cpp_out=<svc> --grpc_out=<svc> \
+       --plugin=protoc-gen-grpc=$(command -v grpc_cpp_plugin) \
+       <svc>/message.proto
+```
+
+**修改任何 `.proto` 之后**：重跑本脚本，并重新编译所有用到该 proto 的服务
+（`ChatServer` 与 `ChatServer2` 各带一份 `message.proto`，改一份要同步另一份）。
+
 
 ### 运行
 
