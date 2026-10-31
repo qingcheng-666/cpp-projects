@@ -9,6 +9,23 @@
 #include "RedisMgr.h"
 #include "MysqlMgr.h"
 
+// �ļ�����ȫУ�飺ֻ�������ļ�������ֹ·���ָ�������������ֹ·����Խ
+// �ļ������Կͻ��� JSON������У�飬name="../../etc/xx" ��д���ļ�Ŀ¼֮��
+static bool IsSafeFileName(const std::string& name) {
+	if (name.empty() || name == "." || name == "..") {
+		return false;
+	}
+	if (name.size() > 255) {
+		return false;
+	}
+	for (char c : name) {
+		if (c == '/' || c == '\\' || static_cast<unsigned char>(c) < 0x20) {
+			return false;
+		}
+	}
+	return true;
+}
+
 LogicWorker::LogicWorker():_b_stop(false)
 {
 	RegisterCallBacks();
@@ -83,6 +100,12 @@ void LogicWorker::RegisterCallBacks()
 			auto md5 = root["md5"].asString();
 			auto seq = root["seq"].asInt();
 			auto name = root["name"].asString();
+			if (!IsSafeFileName(name)) {
+				Json::Value err_val;
+				err_val["error"] = ErrorCodes::FileNotExists;
+				session->Send(err_val.toStyledString(), msg_id + 1);
+				return;
+			}
 			auto total_size = root["total_size"].asInt();
 			auto trans_size = root["trans_size"].asInt();
 			auto last = root["last"].asInt();
@@ -112,20 +135,20 @@ void LogicWorker::RegisterCallBacks()
 			
 			// 使用 std::hash 对字符串进行哈希
 			std::hash<std::string> hash_fn;
-			size_t hash_value = hash_fn(name); // 生成哈希值
+			size_t hash_value = hash_fn(name); // 生成哈希倄1�7
 			int index = hash_value % FILE_WORKER_COUNT;
 			std::cout << "Hash value: " << hash_value << std::endl;
 
 			//第一个包
 			if (seq == 1) {
-				//构造数据存储
+				//构�1�7�数据存傄1�7
 				auto file_info = std::make_shared<FileInfo>();
 				file_info->_file_path_str = file_path_str;
 				file_info->_name = name;
 				file_info->_seq = seq;
 				file_info->_total_size = total_size;
 				file_info->_trans_size = trans_size;
-				//todo... 后期改为redis,以及mysql 持久化存储
+				//todo... 后期改为redis,以及mysql 持久化存傄1�7
 				bool success = RedisMgr::GetInstance()->SetFileInfo(md5, file_info);
 				if (!success) {
 					rtvalue["error"] = ErrorCodes::FileSaveRedisFailed;
@@ -202,6 +225,12 @@ void LogicWorker::RegisterCallBacks()
 			auto md5 = root["md5"].asString();
 			auto seq = root["seq"].asInt();
 			auto name = root["name"].asString();
+			if (!IsSafeFileName(name)) {
+				Json::Value err_val;
+				err_val["error"] = ErrorCodes::FileNotExists;
+				session->Send(err_val.toStyledString(), msg_id + 1);
+				return;
+			}
 			auto total_size = root["total_size"].asInt();
 			auto trans_size = root["trans_size"].asInt();
 			auto last = root["last"].asInt();
@@ -231,7 +260,7 @@ void LogicWorker::RegisterCallBacks()
 				session->Send(return_str, ID_UPLOAD_HEAD_ICON_RSP);
 			};
 
-			//第一个包校验一下token是否合理
+			//第一个包校验丄1�7下token是否合理
 			if (seq == 1) {
 				//从redis获取用户token是否正确
 				std::string uid_str = std::to_string(uid);
@@ -255,13 +284,13 @@ void LogicWorker::RegisterCallBacks()
 
 			// 使用 std::hash 对字符串进行哈希
 			std::hash<std::string> hash_fn;
-			size_t hash_value = hash_fn(name); // 生成哈希值
+			size_t hash_value = hash_fn(name); // 生成哈希倄1�7
 			int index = hash_value % FILE_WORKER_COUNT;
 			std::cout << "Hash value: " << hash_value << std::endl;
 
 			//第一个包
 			if (seq == 1) {
-				//构造数据存储
+				//构�1�7�数据存傄1�7
 				auto file_info = std::make_shared<FileInfo>();
 				file_info->_file_path_str = file_path_str;
 				file_info->_name = name;
@@ -280,7 +309,7 @@ void LogicWorker::RegisterCallBacks()
 			}
 			else {
 				//auto file_info = LogicSystem::GetInstance()->GetFileInfo(md5);
-				//改为从redis中加载
+				//改为从redis中加轄1�7
 				auto file_info = RedisMgr::GetInstance()->GetFileInfo(name);
 				if (file_info == nullptr) {
 					rtvalue["error"] = ErrorCodes::FileNotExists;
@@ -315,6 +344,12 @@ void LogicWorker::RegisterCallBacks()
 			reader.parse(msg_data, root);
 			auto seq = root["seq"].asInt();
 			auto name = root["name"].asString();
+			if (!IsSafeFileName(name)) {
+				Json::Value err_val;
+				err_val["error"] = ErrorCodes::FileNotExists;
+				session->Send(err_val.toStyledString(), msg_id + 1);
+				return;
+			}
 			auto uid = root["uid"].asInt();
 			auto token = root["token"].asString();
 			auto client_path = root["client_path"].asString();
@@ -336,7 +371,7 @@ void LogicWorker::RegisterCallBacks()
 				session->Send(return_str, ID_DOWN_LOAD_FILE_RSP);
 			};
 
-			//第一个包校验一下token是否合理
+			//第一个包校验丄1�7下token是否合理
 			if (seq == 1) {
 				//从redis获取用户token是否正确
 				std::string uid_str = std::to_string(uid);
@@ -360,7 +395,7 @@ void LogicWorker::RegisterCallBacks()
 
 			// 使用 std::hash 对字符串进行哈希
 			std::hash<std::string> hash_fn;
-			size_t hash_value = hash_fn(name); // 生成哈希值
+			size_t hash_value = hash_fn(name); // 生成哈希倄1�7
 			int index = hash_value % FILE_WORKER_COUNT;
 			std::cout << "Hash value: " << hash_value << std::endl;
 
@@ -379,6 +414,12 @@ void LogicWorker::RegisterCallBacks()
 			auto md5 = root["md5"].asString();
 			auto seq = root["seq"].asInt();
 			auto name = root["name"].asString();
+			if (!IsSafeFileName(name)) {
+				Json::Value err_val;
+				err_val["error"] = ErrorCodes::FileNotExists;
+				session->Send(err_val.toStyledString(), msg_id + 1);
+				return;
+			}
 			auto total_size_str = root["total_size"].asString();
 			auto trans_size_str = root["trans_size"].asString();
 			int64_t total_size = std::stoll(total_size_str);
@@ -415,13 +456,13 @@ void LogicWorker::RegisterCallBacks()
 
 			// 使用 std::hash 对字符串进行哈希
 			std::hash<std::string> hash_fn;
-			size_t hash_value = hash_fn(name); // 生成哈希值
+			size_t hash_value = hash_fn(name); // 生成哈希倄1�7
 			int index = hash_value % FILE_WORKER_COUNT;
 			std::cout << "Hash value: " << hash_value << std::endl;
 
 			//第一个包
 			if (seq == 1) {
-				//构造数据存储
+				//构�1�7�数据存傄1�7
 				auto file_info = std::make_shared<FileInfo>();
 				file_info->_file_path_str = file_path_str;
 				file_info->_name = name;
@@ -472,6 +513,12 @@ void LogicWorker::RegisterCallBacks()
 			auto md5 = root["md5"].asString();
 			auto seq = root["seq"].asInt();
 			auto name = root["name"].asString();
+			if (!IsSafeFileName(name)) {
+				Json::Value err_val;
+				err_val["error"] = ErrorCodes::FileNotExists;
+				session->Send(err_val.toStyledString(), msg_id + 1);
+				return;
+			}
 			auto total_size_str = root["total_size"].asString();
 			auto trans_size_str = root["trans_size"].asString();
 			auto total_size = std::stoll(total_size_str);
@@ -506,13 +553,13 @@ void LogicWorker::RegisterCallBacks()
 
 			// 使用 std::hash 对字符串进行哈希
 			std::hash<std::string> hash_fn;
-			size_t hash_value = hash_fn(name); // 生成哈希值
+			size_t hash_value = hash_fn(name); // 生成哈希倄1�7
 			int index = hash_value % FILE_WORKER_COUNT;
 			std::cout << "Hash value: " << hash_value << std::endl;
 
 			//第一个包
 			if (seq == 1) {
-				//构造数据存储
+				//构�1�7�数据存傄1�7
 				auto file_info = std::make_shared<FileInfo>();
 				file_info->_file_path_str = file_path_str;
 				file_info->_name = name;
@@ -564,6 +611,12 @@ void LogicWorker::RegisterCallBacks()
 			auto md5 = root["md5"].asString();
 			auto seq = root["seq"].asInt();
 			auto name = root["name"].asString();
+			if (!IsSafeFileName(name)) {
+				Json::Value err_val;
+				err_val["error"] = ErrorCodes::FileNotExists;
+				session->Send(err_val.toStyledString(), msg_id + 1);
+				return;
+			}
 			auto total_size = root["total_size"].asInt();
 			auto trans_size = root["trans_size"].asInt();
 			auto last = root["last"].asInt();
@@ -598,13 +651,13 @@ void LogicWorker::RegisterCallBacks()
 
 			// 使用 std::hash 对字符串进行哈希
 			std::hash<std::string> hash_fn;
-			size_t hash_value = hash_fn(name); // 生成哈希值
+			size_t hash_value = hash_fn(name); // 生成哈希倄1�7
 			int index = hash_value % FILE_WORKER_COUNT;
 			std::cout << "Hash value: " << hash_value << std::endl;
 
 			//第一个包
 			if (seq == 1) {
-				//构造数据存储
+				//构�1�7�数据存傄1�7
 				auto file_info = std::make_shared<FileInfo>();
 				file_info->_file_path_str = file_path_str;
 				file_info->_name = name;
@@ -661,7 +714,7 @@ void LogicWorker::RegisterCallBacks()
 
 			// 资源文件路径
 			auto file_dir = ConfigMgr::Inst().GetFileOutPath();
-			//该消息是接收方客户端发送过来的,服务器将资源存储在发送方的文件夹中
+			//该消息是接收方客户端发�1�7�过来的,服务器将资源存储在发送方的文件夹丄1�7
 			auto uid_str = std::to_string(chat_msg->sender_id);
 			auto file_path = (file_dir / uid_str / chat_msg->content);
 			boost::uintmax_t file_size = boost::filesystem::file_size(file_path);
@@ -690,6 +743,12 @@ void LogicWorker::RegisterCallBacks()
 
 			auto seq = root["seq"].asInt();
 			auto name = root["name"].asString();
+			if (!IsSafeFileName(name)) {
+				Json::Value err_val;
+				err_val["error"] = ErrorCodes::FileNotExists;
+				session->Send(err_val.toStyledString(), msg_req_id + 1);
+				return;
+			}
 			auto total_size_str = root["total_size"].asString();
 			auto trans_size_str = root["trans_size"].asString();
 			auto file_path = ConfigMgr::Inst().GetFileOutPath();
@@ -712,12 +771,12 @@ void LogicWorker::RegisterCallBacks()
 
 			// 使用 std::hash 对字符串进行哈希
 			std::hash<std::string> hash_fn;
-			size_t hash_value = hash_fn(name); // 生成哈希值
+			size_t hash_value = hash_fn(name); // 生成哈希倄1�7
 			int index = hash_value % DOWN_LOAD_WORKER_COUNT;
 			std::cout << "Hash value: " << hash_value << std::endl;
 
 
-			//第一个包校验一下token是否合理
+			//第一个包校验丄1�7下token是否合理
 			if (seq == 1) {
 				//从redis获取用户token是否正确
 				std::string uid_str = std::to_string(uid);
