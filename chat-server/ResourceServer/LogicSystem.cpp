@@ -5,6 +5,7 @@
 #include <boost/filesystem.hpp>
 #include "ConfigMgr.h"
 #include "FileSystem.h"
+#include "RedisMgr.h"
 
 using namespace std;
 
@@ -29,13 +30,25 @@ void LogicSystem::AddMD5File(std::string md5, std::shared_ptr<FileInfo> fileinfo
 }
 
 std::shared_ptr<FileInfo> LogicSystem::GetFileInfo(std::string md5) {
-	std::lock_guard<std::mutex> lock(_file_mtx);
-	auto iter = _map_md5_files.find(md5);
-	if (iter == _map_md5_files.end()) {
+	// 第一层：内存缓存
+	{
+		std::lock_guard<std::mutex> lock(_file_mtx);
+		auto iter = _map_md5_files.find(md5);
+		if (iter != _map_md5_files.end()) {
+			return iter->second;
+		}
+	}
+
+	// 第二层：回源 Redis
+	// 注意：必须在释放 _file_mtx 之后再查 Redis，否则网络 IO 会一直占着锁
+	auto file_info = RedisMgr::GetInstance()->GetFileInfo(md5);
+	if (file_info == nullptr) {
 		return nullptr;
 	}
 
-	return iter->second;
+	// 第三层：回填内存缓存，下次就命中第一层
+	AddMD5File(md5, file_info);
+	return file_info;
 }
 
 
