@@ -326,6 +326,62 @@ public:
         return count;
     }
 
+    /* -----------------------------------------------------------------------
+     * [P7] 删除文件【开头】的 n 字节，保留后面的内容
+     *
+     * 用途：增量快照落盘后，把「快照已经覆盖的那段 WAL 前缀」删掉，
+     *       剩下的正好就是"快照之后的增量"。恢复时从 WAL 开头重放即可。
+     *       和 truncate_to(n) 相反：truncate_to 保留前 n 字节（切坏尾巴）。
+     *
+     * 为什么不需要在快照里记 offset：
+     *   因为每次都从 WAL 开头重放，而截断后开头就是"增量起点"——
+     *   没有坐标原点，也就没有坐标漂移的问题。
+     *   前提：操作幂等（PUT 覆盖 / DEL 删除）。若崩溃在"快照 rename 之后、
+     *         截断之前"，重放会把已进快照的记录再应用一遍，结果仍然相同。
+     *         一旦有 INCR 这类非幂等操作，就必须在快照里记 offset（或 LSN）。
+     *
+     * 实现：先写 .trunc 临时文件再 rename —— 让"截断"也是原子的，
+     *       中途崩溃不会留下半个 WAL。
+     * ----------------------------------------------------------------------- */
+    bool truncate_head(size_t n) {
+        std::lock_guard<std::mutex> lk(_mtx);       // 与 append 互斥
+        if (n == 0) return true;
+
+        std::ifstream in(_path, std::ios::binary);
+        if (!in.is_open()) return false;
+        std::string buf((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+        in.close();
+
+        if (n >= buf.size()) {
+            buf.clear();                            // 全删（等价 reset）
+        }
+        else {
+            buf.erase(0, n);                        // ★ 丢掉前 n 字节，保留增量
+        }
+        _bytes = buf.size();
+
+        std::string tmp = _path + ".trunc";
+        {
+            std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+            if (!out.is_open()) return false;
+            if (!buf.empty()) {
+                out.write(buf.data(), static_cast<std::streamsize>(buf.size()));
+            }
+            out.flush();
+            if (!out.good()) return false;
+        }
+
+        _out.close();
+        std::remove(_path.c_str());
+        if (std::rename(tmp.c_str(), _path.c_str()) != 0) {
+            std::cerr << "[WAL] truncate_head 重命名失败" << std::endl;
+            return false;
+        }
+        _out.open(_path, std::ios::binary | std::ios::app);   // 重新打开做追加
+        return _out.is_open();
+    }
+
     // 清空 WAL（快照完成后调用）
     bool reset() {
         // [P6] 与 append 互斥
@@ -477,10 +533,22 @@ public:
      *   反过来做（先清 WAL 再写快照）会在中间崩溃时丢数据。
      * ----------------------------------------------------------------------- */
     bool snapshot() {
-        // [P6] 快照必须与写入互斥：
-        //   否则遍历跳表的中途有写入，快照里会缺数据或重复，
-        //   而清空 WAL 之后这些数据就永久丢了。
-        std::lock_guard<std::mutex> lk(_write_mtx);
+        // [P7] 增量快照：
+        //   ① 持锁只做「复制内存 + 记下此刻 WAL 字节数」—— 锁只持有一小段
+        //   ② 锁外慢慢写快照文件（期间写入照常进行，不会被阻塞几秒）
+        //   ③ 快照落盘后，只截掉「拷贝那一刻之前的 WAL 前缀」，
+        //      剩下的正好是增量；恢复时从 WAL 开头重放即可。
+        std::vector<std::pair<K, V>> copy;
+        size_t snap_wal_offset = 0;
+        {
+            // [P6] 拷贝必须与写入互斥，否则快照里会缺数据或重复
+            std::lock_guard<std::mutex> lk(_write_mtx);
+            snap_wal_offset = _wal.bytes();          // ★ 检查点：此刻 WAL 有多少字节
+            copy.reserve(static_cast<size_t>(_list.size()));
+            for (auto it = _list.begin(); it != _list.end(); ++it) {
+                copy.emplace_back(it->first, it->second);
+            }
+        }
 
         // 快照用「先写临时文件再改名」保证原子性
         std::string tmp = _snap_path + ".tmp";
@@ -490,18 +558,12 @@ public:
                 std::cerr << "[KVStore] 无法创建快照文件: " << tmp << std::endl;
                 return false;
             }
-            // [P2] 快照格式从「key\tvalue\n 文本行」改成「长度前缀二进制」。
-            //   原因：string key 里可能含 \t 或 \n，文本行格式会被破坏，
-            //   恢复时切分错位 → 数据损坏。
-            //   长度前缀对任意字节都安全，而且和 WAL 格式一致，读取逻辑能复用。
-            //
-            //   代价：快照不再是人类可读的。可以另外提供一个 --dump-text
-            //   工具做只读导出（TODO）。
-            for (auto it = _list.begin(); it != _list.end(); ++it) {
+            // [P2] 记录用「长度前缀二进制」，对任意字节安全
+            for (auto& kv : copy) {
                 std::string rec = WALRecord::encode_no_crc(
                     WALRecord::kOpPut,
-                    KeyCodec<K>::encode(it->first),
-                    it->second);
+                    KeyCodec<K>::encode(kv.first),
+                    kv.second);
                 out.write(rec.data(), static_cast<std::streamsize>(rec.size()));
             }
             out.flush();
@@ -518,9 +580,10 @@ public:
             return false;
         }
 
-        // 快照已安全落盘，现在可以清空 WAL
-        if (!_wal.reset()) {
-            std::cerr << "[KVStore] 清空 WAL 失败" << std::endl;
+        // 快照已落盘：只丢掉「已被快照覆盖」的 WAL 前缀。
+        // 注意：截断期间新写入的日志会被保留（它们在 snap_wal_offset 之后）。
+        if (!_wal.truncate_head(snap_wal_offset)) {
+            std::cerr << "[KVStore] 截断 WAL 前缀失败" << std::endl;
             return false;
         }
         return true;
