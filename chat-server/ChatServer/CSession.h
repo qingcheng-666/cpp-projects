@@ -7,6 +7,7 @@
 #include <boost/asio.hpp>
 #include <queue>
 #include <mutex>
+#include <atomic>   // [修复] _b_close / _last_heartbeat 都是跨线程读写
 #include <memory>
 #include "const.h"
 #include "MsgNode.h"
@@ -60,7 +61,10 @@ private:
 	std::string _session_id;
 	char _data[MAX_LENGTH];
 	CServer* _server;
-	bool _b_close;
+	// [修复] 跨线程访问：Send() 在 _send_lock 下读、Close() 在 _session_mtx 下写，
+	//   两把不同的锁无法建立 happens-before → data race（TSan 会报）。
+	//   _b_close 只是布尔标志，直接改成 atomic 最轻量。
+	std::atomic<bool> _b_close;
 	std::queue<shared_ptr<SendNode> > _send_que;
 	std::mutex _send_lock;
 	//收到的消息结构
