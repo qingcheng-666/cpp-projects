@@ -52,3 +52,6 @@ Thumbs.db
 # 测试临时
 /tmp/
 *.diff
+
+# 手写构建脚本叫 makefile（小写），需要跟踪；上面 Makefile 规则是给 CMake 生成文件用的
+!makefile
