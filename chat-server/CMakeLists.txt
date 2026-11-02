@@ -30,10 +30,40 @@ set(THIRD_PARTY_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/third_include
 )
 
-# mysqlcppconn 头文件路径：Windows 版代码用 <jdbc/mysql_driver.h>、
-# <jdbc/cppconn/*>，但 Ubuntu 的 libmysqlcppconn-dev 布局不同。
-# 装完后执行 dpkg -L libmysqlcppconn-dev | grep include 确认，
-# 然后用 tools/fix_mysqlconn_include.sh 建软链让 jdbc/ 能解析。
+# mysqlcppconn 头文件路径：代码用 <jdbc/mysql_driver.h> / <jdbc/cppconn/*>，
+# 但 Ubuntu 的 libmysqlcppconn-dev 把 mysql_driver.h、mysql_connection.h、cppconn/
+# 平铺在 /usr/include 下，没有 jdbc/ 这一层。这里在构建目录里自动生成一个带 jdbc/
+# 的 shim 目录（软链），让 <jdbc/...> 能被解析 —— 不再需要手工 sudo 建软链。
+find_path(MYSQLCPPCONN_ROOT
+    NAMES mysql_driver.h
+    PATHS /usr/include /usr/local/include /usr/include/mysql-cppconn-8
+    NO_DEFAULT_PATH)
+if(NOT MYSQLCPPCONN_ROOT)
+    find_path(MYSQLCPPCONN_ROOT NAMES mysql_driver.h)
+endif()
+if(MYSQLCPPCONN_ROOT)
+    if(EXISTS "${MYSQLCPPCONN_ROOT}/jdbc/mysql_driver.h")
+        list(APPEND THIRD_PARTY_INCLUDE_DIRS "${MYSQLCPPCONN_ROOT}")
+        message(STATUS "mysqlcppconn: ${MYSQLCPPCONN_ROOT}（自带 jdbc/）")
+    else()
+        set(MYSQL_SHIM_DIR "${CMAKE_BINARY_DIR}/mysqlconn_shim")
+        file(MAKE_DIRECTORY "${MYSQL_SHIM_DIR}/jdbc")
+        foreach(_h mysql_driver.h mysql_connection.h mysql_resultset.h mysql_statement.h)
+            if(EXISTS "${MYSQLCPPCONN_ROOT}/${_h}")
+                file(CREATE_LINK "${MYSQLCPPCONN_ROOT}/${_h}"
+                     "${MYSQL_SHIM_DIR}/jdbc/${_h}" SYMBOLIC)
+            endif()
+        endforeach()
+        if(EXISTS "${MYSQLCPPCONN_ROOT}/cppconn")
+            file(CREATE_LINK "${MYSQLCPPCONN_ROOT}/cppconn"
+                 "${MYSQL_SHIM_DIR}/jdbc/cppconn" SYMBOLIC)
+        endif()
+        list(APPEND THIRD_PARTY_INCLUDE_DIRS "${MYSQL_SHIM_DIR}")
+        message(STATUS "mysqlcppconn: ${MYSQLCPPCONN_ROOT}（已生成 jdbc/ shim）")
+    endif()
+else()
+    message(WARNING "找不到 mysql_driver.h，mysql 相关服务可能编译失败")
+endif()
 
 set(COMMON_LINK_LIBS
     ${GRPC_LIBRARIES}
@@ -50,22 +80,22 @@ set(COMMON_LINK_LIBS
 # GateServer — boost.beast HTTP 登录/注册网关（端口 8080）
 # ============================================================
 add_executable(gate_server
-    server/GateServer/AsioIOServicePool.cpp
-    server/GateServer/ConfigMgr.cpp
-    server/GateServer/CServer.cpp
-    server/GateServer/GateServer.cpp
-    server/GateServer/HttpConnection.cpp
-    server/GateServer/LogicSystem.cpp
-    server/GateServer/MysqlDao.cpp
-    server/GateServer/MysqlMgr.cpp
-    server/GateServer/RedisMgr.cpp
-    server/GateServer/StatusGrpcClient.cpp
-    server/GateServer/VerifyGrpcClient.cpp
-    server/GateServer/message.grpc.pb.cc
-    server/GateServer/message.pb.cc
+    GateServer/AsioIOServicePool.cpp
+    GateServer/ConfigMgr.cpp
+    GateServer/CServer.cpp
+    GateServer/GateServer.cpp
+    GateServer/HttpConnection.cpp
+    GateServer/LogicSystem.cpp
+    GateServer/MysqlDao.cpp
+    GateServer/MysqlMgr.cpp
+    GateServer/RedisMgr.cpp
+    GateServer/StatusGrpcClient.cpp
+    GateServer/VerifyGrpcClient.cpp
+    GateServer/message.grpc.pb.cc
+    GateServer/message.pb.cc
 )
 target_include_directories(gate_server PRIVATE
-    server/GateServer
+    GateServer
     ${THIRD_PARTY_INCLUDE_DIRS}
     ${GRPC_INCLUDE_DIRS}
     ${PROTOBUF_INCLUDE_DIRS}
@@ -76,27 +106,27 @@ target_link_libraries(gate_server ${COMMON_LINK_LIBS})
 # ChatServer — asio TCP 聊天长连接（8990 + gRPC 50055）
 # ============================================================
 add_executable(chat_server
-    server/ChatServer/AsioIOServicePool.cpp
-    server/ChatServer/ChatGrpcClient.cpp
-    server/ChatServer/ChatServer.cpp
-    server/ChatServer/ChatServiceImpl.cpp
-    server/ChatServer/ConfigMgr.cpp
-    server/ChatServer/CServer.cpp
-    server/ChatServer/CSession.cpp
-    server/ChatServer/DistLock.cpp
-    server/ChatServer/LogicSystem.cpp
-    server/ChatServer/MsgNode.cpp
-    server/ChatServer/MysqlDao.cpp
-    server/ChatServer/MysqlMgr.cpp
-    server/ChatServer/RedisMgr.cpp
-    server/ChatServer/StatusGrpcClient.cpp
-    server/ChatServer/UserMgr.cpp
-    server/ChatServer/utils.cpp
-    server/ChatServer/message.grpc.pb.cc
-    server/ChatServer/message.pb.cc
+    ChatServer/AsioIOServicePool.cpp
+    ChatServer/ChatGrpcClient.cpp
+    ChatServer/ChatServer.cpp
+    ChatServer/ChatServiceImpl.cpp
+    ChatServer/ConfigMgr.cpp
+    ChatServer/CServer.cpp
+    ChatServer/CSession.cpp
+    ChatServer/DistLock.cpp
+    ChatServer/LogicSystem.cpp
+    ChatServer/MsgNode.cpp
+    ChatServer/MysqlDao.cpp
+    ChatServer/MysqlMgr.cpp
+    ChatServer/RedisMgr.cpp
+    ChatServer/StatusGrpcClient.cpp
+    ChatServer/UserMgr.cpp
+    ChatServer/utils.cpp
+    ChatServer/message.grpc.pb.cc
+    ChatServer/message.pb.cc
 )
 target_include_directories(chat_server PRIVATE
-    server/ChatServer
+    ChatServer
     ${THIRD_PARTY_INCLUDE_DIRS}
     ${GRPC_INCLUDE_DIRS}
     ${PROTOBUF_INCLUDE_DIRS}
@@ -108,15 +138,15 @@ target_link_libraries(chat_server ${COMMON_LINK_LIBS})
 #   给 GateServer 的 /get_varifycode 用：生成 6 位码 -> SETEX code_<email> 300
 # ============================================================
 add_executable(varify_server
-    server/VarifyServer/ConfigMgr.cpp
-    server/VarifyServer/RedisMgr.cpp
-    server/VarifyServer/VarifyServer.cpp
-    server/VarifyServer/VarifyServiceImpl.cpp
-    server/VarifyServer/message.grpc.pb.cc
-    server/VarifyServer/message.pb.cc
+    VarifyServer/ConfigMgr.cpp
+    VarifyServer/RedisMgr.cpp
+    VarifyServer/VarifyServer.cpp
+    VarifyServer/VarifyServiceImpl.cpp
+    VarifyServer/message.grpc.pb.cc
+    VarifyServer/message.pb.cc
 )
 target_include_directories(varify_server PRIVATE
-    server/VarifyServer
+    VarifyServer
     ${THIRD_PARTY_INCLUDE_DIRS}
     ${GRPC_INCLUDE_DIRS}
     ${PROTOBUF_INCLUDE_DIRS}
@@ -127,20 +157,20 @@ target_link_libraries(varify_server ${COMMON_LINK_LIBS})
 # StatusServer — gRPC 状态服务（分配 ChatServer + 发 token，50052）
 # ============================================================
 add_executable(status_server
-    server/StatusServer/AsioIOServicePool.cpp
-    server/StatusServer/ChatGrpcClient.cpp
-    server/StatusServer/ConfigMgr.cpp
-    server/StatusServer/DistLock.cpp
-    server/StatusServer/MysqlDao.cpp
-    server/StatusServer/MysqlMgr.cpp
-    server/StatusServer/RedisMgr.cpp
-    server/StatusServer/StatusServer.cpp
-    server/StatusServer/StatusServiceImpl.cpp
-    server/StatusServer/message.grpc.pb.cc
-    server/StatusServer/message.pb.cc
+    StatusServer/AsioIOServicePool.cpp
+    StatusServer/ChatGrpcClient.cpp
+    StatusServer/ConfigMgr.cpp
+    StatusServer/DistLock.cpp
+    StatusServer/MysqlDao.cpp
+    StatusServer/MysqlMgr.cpp
+    StatusServer/RedisMgr.cpp
+    StatusServer/StatusServer.cpp
+    StatusServer/StatusServiceImpl.cpp
+    StatusServer/message.grpc.pb.cc
+    StatusServer/message.pb.cc
 )
 target_include_directories(status_server PRIVATE
-    server/StatusServer
+    StatusServer
     ${THIRD_PARTY_INCLUDE_DIRS}
     ${GRPC_INCLUDE_DIRS}
     ${PROTOBUF_INCLUDE_DIRS}
@@ -151,29 +181,29 @@ target_link_libraries(status_server ${COMMON_LINK_LIBS})
 # ResourceServer — 文件/图片传输（断点续传，端口见 config.ini）
 # ============================================================
 add_executable(resource_server
-    server/ResourceServer/AsioIOServicePool.cpp
-    server/ResourceServer/base64.cpp
-    server/ResourceServer/ChatServerGrpcClient.cpp
-    server/ResourceServer/ConfigMgr.cpp
-    server/ResourceServer/CServer.cpp
-    server/ResourceServer/CSession.cpp
-    server/ResourceServer/DistLock.cpp
-    server/ResourceServer/FileInfo.cpp
-    server/ResourceServer/FileSystem.cpp
-    server/ResourceServer/FileWorker.cpp
-    server/ResourceServer/LogicSystem.cpp
-    server/ResourceServer/LogicWorker.cpp
-    server/ResourceServer/MsgNode.cpp
-    server/ResourceServer/MysqlDao.cpp
-    server/ResourceServer/MysqlMgr.cpp
-    server/ResourceServer/RedisMgr.cpp
-    server/ResourceServer/ResourceServer.cpp
-    server/ResourceServer/UserMgr.cpp
-    server/ResourceServer/message.grpc.pb.cc
-    server/ResourceServer/message.pb.cc
+    ResourceServer/AsioIOServicePool.cpp
+    ResourceServer/base64.cpp
+    ResourceServer/ChatServerGrpcClient.cpp
+    ResourceServer/ConfigMgr.cpp
+    ResourceServer/CServer.cpp
+    ResourceServer/CSession.cpp
+    ResourceServer/DistLock.cpp
+    ResourceServer/FileInfo.cpp
+    ResourceServer/FileSystem.cpp
+    ResourceServer/FileWorker.cpp
+    ResourceServer/LogicSystem.cpp
+    ResourceServer/LogicWorker.cpp
+    ResourceServer/MsgNode.cpp
+    ResourceServer/MysqlDao.cpp
+    ResourceServer/MysqlMgr.cpp
+    ResourceServer/RedisMgr.cpp
+    ResourceServer/ResourceServer.cpp
+    ResourceServer/UserMgr.cpp
+    ResourceServer/message.grpc.pb.cc
+    ResourceServer/message.pb.cc
 )
 target_include_directories(resource_server PRIVATE
-    server/ResourceServer
+    ResourceServer
     ${THIRD_PARTY_INCLUDE_DIRS}
     ${GRPC_INCLUDE_DIRS}
     ${PROTOBUF_INCLUDE_DIRS}
